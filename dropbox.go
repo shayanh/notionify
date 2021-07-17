@@ -14,19 +14,118 @@ import (
 	"github.com/dropbox/dropbox-sdk-go-unofficial/v6/dropbox/sharing"
 	"github.com/go-redis/redis/v8"
 	"github.com/sirupsen/logrus"
+	"go.uber.org/multierr"
 )
 
+// DropboxSynchronizer ensures that all files inside a Dropbox folder are
+// synchronized with Notion.
+type DropboxSynchronizer struct {
+	dh   *DropboxHandler
+	cs   *CloudFileSynchronizer
+	rdb  *redis.Client
+	log  *logrus.Logger
+	lock sync.Mutex
+}
+
+func NewDropboxSynchronizer(dh *DropboxHandler, ch *CloudFileSynchronizer, rdb *redis.Client, log *logrus.Logger) *DropboxSynchronizer {
+	return &DropboxSynchronizer{
+		dh:  dh,
+		cs:  ch,
+		rdb: rdb,
+		log: log,
+	}
+}
+
+func (ds *DropboxSynchronizer) SyncFolder(path string) ([]*NotionPage, error) {
+	ds.lock.Lock()
+	defer ds.lock.Unlock()
+
+	var cursor string
+	ctx := context.TODO()
+	key := ds.getCursorKey(path)
+	if val, err := ds.rdb.Get(ctx, key).Result(); err != redis.Nil {
+		if err != nil {
+			return nil, err
+		}
+		cursor = val
+		ds.log.WithFields(logrus.Fields{
+			"path":   path,
+			"cursor": cursor,
+		}).Info("Cursor retrieved from redis.")
+	}
+
+	entries, newCursor, err := ds.dh.GetAllEntries(path, cursor)
+	if err != nil {
+		ds.log.Error(err)
+	}
+
+	var errs error
+	var pages []*NotionPage
+	haveErr := false
+	for _, entry := range entries {
+		switch v := entry.(type) {
+		case *files.FileMetadata:
+			cloudFile, err := ds.getCloudFile(v)
+			if err != nil {
+				ds.log.Error(err)
+				haveErr = true
+				continue
+			}
+			page, err := ds.cs.Sync(cloudFile)
+			if err != nil {
+				haveErr = true
+				errs = multierr.Append(errs, err)
+			} else {
+				pages = append(pages, page)
+			}
+		case *files.FolderMetadata:
+			ds.log.Info("Folder:", v.PathDisplay, v.Id)
+		case *files.DeletedMetadata:
+			ds.log.Info("Deleted:", v.PathDisplay)
+		}
+	}
+
+	if !haveErr && newCursor != cursor {
+		err := ds.rdb.Set(ctx, key, newCursor, 0).Err()
+		if err != nil {
+			errs = multierr.Append(errs, err)
+			return pages, errs
+		}
+		ds.log.WithFields(logrus.Fields{
+			"path":   path,
+			"cursor": newCursor,
+		}).Info("New cursor saved.")
+	}
+	return pages, errs
+}
+
+func (ds *DropboxSynchronizer) getCloudFile(fileMetadata *files.FileMetadata) (*CloudFile, error) {
+	link, err := ds.dh.getFileLink(fileMetadata)
+	if err != nil {
+		return nil, err
+	}
+	title := ds.dh.getFileTitle(fileMetadata)
+	cloudFile := &CloudFile{
+		FileID:   fileMetadata.Id,
+		Title:    title,
+		URL:      link,
+		Provider: "dropbox",
+	}
+	return cloudFile, nil
+}
+
+func (ds *DropboxSynchronizer) getCursorKey(path string) string {
+	return "cursor-dropbox-" + path
+}
+
+// DropboxHandler handles Dropbox API.
 type DropboxHandler struct {
-	log    *logrus.Logger
-	ch     *CloudFileHandler
-	rdb    *redis.Client
 	config dropbox.Config
 	fc     files.Client
 	sc     sharing.Client
-	lock   sync.Mutex
 }
 
-func NewDropboxHandler(token string, cloudFileHandler *CloudFileHandler, rdb *redis.Client, log *logrus.Logger) *DropboxHandler {
+func NewDropboxHandler(token string) *DropboxHandler {
 	config := dropbox.Config{
 		Token:    token,
 		LogLevel: dropbox.LogInfo,
@@ -35,79 +134,13 @@ func NewDropboxHandler(token string, cloudFileHandler *CloudFileHandler, rdb *re
 	sharingClient := sharing.New(config)
 
 	return &DropboxHandler{
-		log:    log,
-		ch:     cloudFileHandler,
-		rdb:    rdb,
 		config: config,
 		fc:     filesClient,
 		sc:     sharingClient,
 	}
 }
 
-func (dh *DropboxHandler) HandleFolder(path string) {
-	dh.lock.Lock()
-	defer dh.lock.Unlock()
-
-	var cursor string
-	ctx := context.TODO()
-	key := dh.getCursorKey(path)
-	if val, err := dh.rdb.Get(ctx, key).Result(); err != redis.Nil {
-		if err != nil {
-			dh.log.Error(err)
-			return
-		}
-		cursor = val
-		dh.log.WithFields(logrus.Fields{
-			"path":   path,
-			"cursor": cursor,
-		}).Info("Cursor retrieved from redis.")
-	}
-
-	entries, newCursor, err := dh.getAllEntries(path, cursor)
-	if err != nil {
-		dh.log.Error(err)
-	}
-
-	haveErr := false
-	for _, entry := range entries {
-		switch v := entry.(type) {
-		case *files.FileMetadata:
-			cloudFile, err := dh.getCloudFile(v)
-			if err != nil {
-				dh.log.Error(err)
-				haveErr = true
-				continue
-			}
-			err = dh.ch.HandleCloudFile(cloudFile)
-			if err != nil {
-				dh.log.Error(err)
-				haveErr = true
-			}
-		case *files.FolderMetadata:
-			dh.log.Info("Folder:", v.PathDisplay, v.Id)
-		case *files.DeletedMetadata:
-			dh.log.Info("Deleted:", v.PathDisplay)
-		}
-	}
-
-	if !haveErr && newCursor != cursor {
-		err := dh.rdb.Set(ctx, key, newCursor, 0).Err()
-		if err != nil {
-			dh.log.Error(err)
-			return
-		}
-		dh.log.WithFields(logrus.Fields{
-			"path":   path,
-			"cursor": newCursor,
-		}).Info("New cursor saved.")
-	}
-}
-
-func (dh *DropboxHandler) getCursorKey(path string) string {
-	return "cursor-dropbox-" + path
-}
-
-func (dh *DropboxHandler) getAllEntries(path string, cursor string) ([]files.IsMetadata, string, error) {
+func (dh *DropboxHandler) GetAllEntries(path string, cursor string) ([]files.IsMetadata, string, error) {
 	entires := []files.IsMetadata{}
 	for hasMore := true; hasMore; {
 		var err error
@@ -170,19 +203,4 @@ func (dh *DropboxHandler) getFileLink(fileMetadata *files.FileMetadata) (string,
 	}
 	link := strings.TrimSuffix(sharedFileMetadata.PreviewUrl, "?dl=0")
 	return link, nil
-}
-
-func (dh *DropboxHandler) getCloudFile(fileMetadata *files.FileMetadata) (CloudFile, error) {
-	link, err := dh.getFileLink(fileMetadata)
-	if err != nil {
-		return CloudFile{}, err
-	}
-	title := dh.getFileTitle(fileMetadata)
-	cloudFile := CloudFile{
-		FileID:   fileMetadata.Id,
-		Title:    title,
-		URL:      link,
-		Provider: "dropbox",
-	}
-	return cloudFile, nil
 }

@@ -21,8 +21,15 @@ func main() {
 	})
 
 	nh := notionify.NewNotionHandler(config.Notion.Token, config.Notion.DatabaseID)
-	ch := notionify.NewCloudFileHandler(nh, rdb, log)
-	dh := notionify.NewDropboxHandler(config.Dropbox.Token, ch, rdb, log)
+	ch := notionify.NewCloudSynchronizer(nh, rdb, log)
+	dh := notionify.NewDropboxHandler(config.Dropbox.Token)
+	ds := notionify.NewDropboxSynchronizer(dh, ch, rdb, log)
 
-	dh.HandleFolder(config.Dropbox.RootFolder)
+	pages, err := ds.SyncFolder(config.Dropbox.RootFolder)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, page := range pages {
+		log.Info(page.ID, page.Name)
+	}
 }
