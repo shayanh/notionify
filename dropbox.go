@@ -3,6 +3,7 @@ package notionify
 import (
 	"bytes"
 	"context"
+	"io"
 	"io/ioutil"
 	"path"
 	"path/filepath"
@@ -36,12 +37,11 @@ func NewDropboxSynchronizer(dh *DropboxHandler, ch *CloudFileSynchronizer, rdb *
 	}
 }
 
-func (ds *DropboxSynchronizer) SyncFolder(path string) ([]*NotionPage, error) {
+func (ds *DropboxSynchronizer) SyncFolder(ctx context.Context, path string) ([]*NotionPage, error) {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
 	var cursor string
-	ctx := context.TODO()
 	key := ds.getCursorKey(path)
 	if val, err := ds.rdb.Get(ctx, key).Result(); err != redis.Nil {
 		if err != nil {
@@ -54,7 +54,7 @@ func (ds *DropboxSynchronizer) SyncFolder(path string) ([]*NotionPage, error) {
 		}).Info("Cursor retrieved from redis.")
 	}
 
-	entries, newCursor, err := ds.dh.GetAllEntries(path, cursor)
+	entries, newCursor, err := ds.dh.ListFolder(path, cursor)
 	if err != nil {
 		ds.log.Error(err)
 	}
@@ -65,13 +65,13 @@ func (ds *DropboxSynchronizer) SyncFolder(path string) ([]*NotionPage, error) {
 	for _, entry := range entries {
 		switch v := entry.(type) {
 		case *files.FileMetadata:
-			cloudFile, err := ds.getCloudFile(v)
+			cloudFile, err := ds.dh.getCloudFile(v)
 			if err != nil {
 				ds.log.Error(err)
 				haveErr = true
 				continue
 			}
-			page, err := ds.cs.Sync(cloudFile)
+			page, err := ds.cs.Sync(ctx, cloudFile)
 			if err != nil {
 				haveErr = true
 				errs = multierr.Append(errs, err)
@@ -97,21 +97,6 @@ func (ds *DropboxSynchronizer) SyncFolder(path string) ([]*NotionPage, error) {
 		}).Info("New cursor saved.")
 	}
 	return pages, errs
-}
-
-func (ds *DropboxSynchronizer) getCloudFile(fileMetadata *files.FileMetadata) (*CloudFile, error) {
-	link, err := ds.dh.getFileLink(fileMetadata)
-	if err != nil {
-		return nil, err
-	}
-	title := ds.dh.getFileTitle(fileMetadata)
-	cloudFile := &CloudFile{
-		FileID:   fileMetadata.Id,
-		Title:    title,
-		URL:      link,
-		Provider: "dropbox",
-	}
-	return cloudFile, nil
 }
 
 func (ds *DropboxSynchronizer) getCursorKey(path string) string {
@@ -140,8 +125,23 @@ func NewDropboxHandler(token string) *DropboxHandler {
 	}
 }
 
-func (dh *DropboxHandler) GetAllEntries(path string, cursor string) ([]files.IsMetadata, string, error) {
-	entires := []files.IsMetadata{}
+func (dh *DropboxHandler) getCloudFile(fileMetadata *files.FileMetadata) (*CloudFile, error) {
+	link, err := dh.getFileLink(fileMetadata)
+	if err != nil {
+		return nil, err
+	}
+	title := dh.getFileTitle(fileMetadata)
+	cloudFile := &CloudFile{
+		FileID:   fileMetadata.Id,
+		Title:    title,
+		URL:      link,
+		Provider: "dropbox",
+	}
+	return cloudFile, nil
+}
+
+func (dh *DropboxHandler) ListFolder(path string, cursor string) ([]files.IsMetadata, string, error) {
+	var entries []files.IsMetadata
 	for hasMore := true; hasMore; {
 		var err error
 		var resp *files.ListFolderResult
@@ -153,13 +153,21 @@ func (dh *DropboxHandler) GetAllEntries(path string, cursor string) ([]files.IsM
 			resp, err = dh.fc.ListFolderContinue(arg)
 		}
 		if err != nil {
-			return entires, cursor, err
+			return entries, cursor, err
 		}
-		entires = append(entires, resp.Entries...)
+		entries = append(entries, resp.Entries...)
 		cursor = resp.Cursor
 		hasMore = resp.HasMore
 	}
-	return entires, cursor, nil
+	return entries, cursor, nil
+}
+
+func (dh *DropboxHandler) Upload(path string, content io.Reader) (*CloudFile, error) {
+	metadata, err := dh.fc.Upload(files.NewCommitInfo(path), content)
+	if err != nil {
+		return nil, err
+	}
+	return dh.getCloudFile(metadata)
 }
 
 func (dh *DropboxHandler) getFileTitle(fileMetadata *files.FileMetadata) string {

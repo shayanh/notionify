@@ -16,10 +16,22 @@ type NotionPage struct {
 func NewNotionPage(page *notionapi.Page) *NotionPage {
 	res := &NotionPage{}
 	res.ID = string(page.ID)
+
 	// TODO: type assertions
-	res.Name = page.Properties["Name"].(notionapi.PageTitleProperty).Title[0].PlainText
-	res.Type = page.Properties["Type"].(notionapi.SelectProperty).Select.Options[0].Name
-	res.URL = page.Properties["URL"].(notionapi.URLProperty).URL.(string)
+	nameProp := page.Properties["Name"]
+	if nameProp != nil {
+		res.Name = nameProp.(*notionapi.PageTitleProperty).Title[0].PlainText
+	}
+
+	typeProp := page.Properties["Type"]
+	if typeProp != nil {
+		res.Type = typeProp.(*notionapi.SelectOptionProperty).Select.Name
+	}
+
+	urlProp := page.Properties["URL"]
+	if urlProp != nil {
+		res.URL = page.Properties["URL"].(*notionapi.URLProperty).URL.(string)
+	}
 	return res
 }
 
@@ -63,14 +75,13 @@ func (nh *NotionHandler) getProperties(c *CloudFile) notionapi.Properties {
 	}
 }
 
-func (nh *NotionHandler) CreatePage(c *CloudFile) (*NotionPage, error) {
+func (nh *NotionHandler) CreatePage(ctx context.Context, c *CloudFile) (*NotionPage, error) {
 	req := &notionapi.PageCreateRequest{
 		Parent: notionapi.Parent{
 			DatabaseID: nh.databaseID,
 		},
 		Properties: nh.getProperties(c),
 	}
-	ctx := context.TODO()
 	page, err := nh.nc.Page.Create(ctx, req)
 	if err != nil {
 		return nil, err
@@ -78,7 +89,7 @@ func (nh *NotionHandler) CreatePage(c *CloudFile) (*NotionPage, error) {
 	return NewNotionPage(page), nil
 }
 
-func (nh *NotionHandler) UpdatePage(c *CloudFile, pageID string) (*NotionPage, error) {
+func (nh *NotionHandler) UpdatePage(ctx context.Context, c *CloudFile, pageID string) (*NotionPage, error) {
 	req := &notionapi.PageUpdateRequest{
 		Properties: nh.getProperties(c),
 	}
@@ -89,7 +100,6 @@ func (nh *NotionHandler) UpdatePage(c *CloudFile, pageID string) (*NotionPage, e
 		}
 	}
 
-	ctx := context.TODO()
 	page, err := nh.nc.Page.Update(ctx, notionapi.PageID(pageID), req)
 	if err != nil {
 		return nil, err
@@ -97,9 +107,8 @@ func (nh *NotionHandler) UpdatePage(c *CloudFile, pageID string) (*NotionPage, e
 	return NewNotionPage(page), nil
 }
 
-func (nh *NotionHandler) ListPages() ([]*NotionPage, error) {
-	ctx := context.TODO()
-	pages := []*NotionPage{}
+func (nh *NotionHandler) ListPages(ctx context.Context) ([]*NotionPage, error) {
+	var pages []*NotionPage
 	var cursor notionapi.Cursor
 	for hasMore := true; hasMore; {
 		req := &notionapi.DatabaseQueryRequest{

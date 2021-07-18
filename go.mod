@@ -2,6 +2,8 @@ module github.com/shayanh/notionify
 
 go 1.16
 
+replace github.com/jomei/notionapi => /home/shayan/go/src/github.com/shayanh/notionapi
+
 require (
 	github.com/dropbox/dropbox-sdk-go-unofficial/v6 v6.0.2
 	github.com/go-redis/redis/v8 v8.11.0
