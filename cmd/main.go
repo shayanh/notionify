@@ -36,7 +36,7 @@ func main() {
 			log.Fatal(err)
 		}
 		for _, page := range pages {
-			log.Info(page.ID, " ", page.Name)
+			log.Info(page.ID, " ", page.Name, " ", page.Type, " ", page.URL)
 		}
 	}
 
@@ -58,7 +58,7 @@ func main() {
 			log.Fatal(err)
 		}
 		for _, c := range cloudFiles {
-			log.Info(c.FileID)
+			log.Infoln(c.FileID, c.URL)
 		}
 	}
 
