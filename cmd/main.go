@@ -1,16 +1,38 @@
 package main
 
 import (
-	"context"
+	"net/http"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/gorilla/mux"
 	"github.com/shayanh/notionify"
 	"github.com/sirupsen/logrus"
 )
 
-func main() {
+func logDecorator(h http.Handler, log *logrus.Logger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wr := notionify.NewResponseWriterWrapper(w)
+		h.ServeHTTP(wr, r)
+		log.WithFields(logrus.Fields{
+			"method": r.Method,
+			"path":   r.URL.Path,
+			"status": wr.Status(),
+		}).Info()
+	})
+}
+
+func newLogger() *logrus.Logger {
 	log := logrus.New()
 	log.Level = logrus.DebugLevel
+	customFormatter := new(logrus.TextFormatter)
+	customFormatter.TimestampFormat = "2006-01-02 15:04:05"
+	customFormatter.FullTimestamp = true
+	log.SetFormatter(customFormatter)
+	return log
+}
+
+func main() {
+	log := newLogger()
 
 	config, err := notionify.ReadConfig()
 	if err != nil {
@@ -23,46 +45,19 @@ func main() {
 		DB:       config.Redis.DB,
 	})
 
-	ctx := context.Background()
-
 	nh := notionify.NewNotionHandler(config.Notion.Token, config.Notion.DatabaseID)
 	ch := notionify.NewCloudSynchronizer(nh, rdb, log)
 	dh := notionify.NewDropboxHandler(config.Dropbox.Token)
 	ds := notionify.NewDropboxSynchronizer(dh, ch, rdb, log)
 
-	syncDropbox := func() {
-		pages, err := ds.SyncFolder(ctx, config.Dropbox.RootFolder)
-		if err != nil {
-			log.Fatal(err)
-		}
-		for _, page := range pages {
-			log.Info(page.ID, " ", page.Name, " ", page.Type, " ", page.URL)
-		}
-	}
+	router := mux.NewRouter()
+	router.StrictSlash(true)
+	dropboxWebhookHandler := notionify.NewDropboxWebhookHandler(config.Dropbox.RootFolder, ds, log)
+	dropboxWebhookHandler.HandleFuncs(router.PathPrefix("/dropbox-webhook").Subrouter())
 
-	listNotion := func() {
-		pages, err := nh.ListPages(ctx)
-		if err != nil {
-			log.Fatal(err)
-		}
-		log.Info(len(pages))
-		for _, page := range pages {
-			log.Info(page.ID, " ", page.Name, " ", page.Type, " ", page.URL)
-		}
+	log.Infof("Listening on %s", config.Web.Addr)
+	err = http.ListenAndServe(config.Web.Addr, logDecorator(router, log))
+	if err != nil {
+		log.Fatal(err)
 	}
-
-	syncNotion := func() {
-		ns := notionify.NewNotionSynchronizer(config.Dropbox.RootFolder, nh, dh, rdb, log)
-		cloudFiles, err := ns.SyncDatabase(ctx)
-		if err != nil {
-			log.Fatal(err)
-		}
-		for _, c := range cloudFiles {
-			log.Infoln(c.FileID, c.URL)
-		}
-	}
-
-	tasks := []func(){syncDropbox, listNotion, syncNotion}
-	activeTask := tasks[0]
-	activeTask()
 }

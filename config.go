@@ -3,9 +3,14 @@ package notionify
 import "github.com/spf13/viper"
 
 type AppConfig struct {
+	Web     WebConfig     `mapstructure:"web"`
 	Dropbox DropboxConfig `mapstructure:"dropbox"`
 	Notion  NotionConfig  `mapstructure:"notion"`
 	Redis   RedisConfig   `mapstructure:"redis"`
+}
+
+type WebConfig struct {
+	Addr string `mapstructure:"addr"`
 }
 
 type DropboxConfig struct {

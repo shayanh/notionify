@@ -65,6 +65,10 @@ func (ds *DropboxSynchronizer) SyncFolder(ctx context.Context, path string) ([]*
 	for _, entry := range entries {
 		switch v := entry.(type) {
 		case *files.FileMetadata:
+			ds.log.WithFields(logrus.Fields{
+				"Path": v.PathDisplay,
+				"ID":   v.Id,
+			}).Info("Dropbox file")
 			cloudFile, err := ds.dh.getCloudFile(v)
 			if err != nil {
 				ds.log.Error(err)
@@ -79,9 +83,14 @@ func (ds *DropboxSynchronizer) SyncFolder(ctx context.Context, path string) ([]*
 				pages = append(pages, page)
 			}
 		case *files.FolderMetadata:
-			ds.log.Info("Folder:", v.PathDisplay, v.Id)
+			ds.log.WithFields(logrus.Fields{
+				"Path": v.PathDisplay,
+				"ID":   v.Id,
+			}).Info("Dropbox folder")
 		case *files.DeletedMetadata:
-			ds.log.Info("Deleted:", v.PathDisplay)
+			ds.log.WithFields(logrus.Fields{
+				"Path": v.PathDisplay,
+			}).Info("Dropbox deleted")
 		}
 	}
 
