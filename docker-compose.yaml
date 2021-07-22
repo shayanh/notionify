@@ -6,8 +6,10 @@ services:
             - "8000:8000"
         depends_on: 
             - redis
+        restart: always
     redis:
         image: redis:6.2.4
         command: ["redis-server", "--appendonly", "yes"]
         volumes: 
             - /home/shayan/data/redis/notionify:/data
+        restart: always
