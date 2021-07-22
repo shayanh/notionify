@@ -1,0 +1,13 @@
+version: "3.9"
+services:
+    notionify:
+        build: .
+        ports: 
+            - "8000:8000"
+        depends_on: 
+            - redis
+    redis:
+        image: redis:6.2.4
+        command: ["redis-server", "--appendonly", "yes"]
+        volumes: 
+            - /home/shayan/data/redis/notionify:/data
