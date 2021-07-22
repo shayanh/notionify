@@ -21,17 +21,23 @@ func logDecorator(h http.Handler, log *logrus.Logger) http.Handler {
 	})
 }
 
-func newLogger() *logrus.Logger {
-	log := logrus.New()
-	log.Level = logrus.DebugLevel
+func newFormatter() *logrus.TextFormatter {
 	customFormatter := new(logrus.TextFormatter)
 	customFormatter.TimestampFormat = "2006-01-02 15:04:05"
 	customFormatter.FullTimestamp = true
-	log.SetFormatter(customFormatter)
+	return customFormatter
+}
+
+func newLogger() *logrus.Logger {
+	log := logrus.New()
+	// log.SetLevel(logrus.DebugLevel)
+	log.SetFormatter(newFormatter())
 	return log
 }
 
 func main() {
+	// logrus.SetLevel(logrus.DebugLevel)
+	logrus.SetFormatter(newFormatter())
 	log := newLogger()
 
 	config, err := notionify.ReadConfig()

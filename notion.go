@@ -2,8 +2,10 @@ package notionify
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/jomei/notionapi"
+	"github.com/sirupsen/logrus"
 )
 
 type NotionPage struct {
@@ -75,6 +77,14 @@ func (nh *NotionHandler) getProperties(c *CloudFile) notionapi.Properties {
 	}
 }
 
+func debugRequest(req interface{}) {
+	b, err := json.Marshal(req)
+	if err != nil {
+		logrus.Error(err)
+	}
+	logrus.Debug(string(b))
+}
+
 func (nh *NotionHandler) CreatePage(ctx context.Context, c *CloudFile) (*NotionPage, error) {
 	req := &notionapi.PageCreateRequest{
 		Parent: notionapi.Parent{
@@ -82,6 +92,7 @@ func (nh *NotionHandler) CreatePage(ctx context.Context, c *CloudFile) (*NotionP
 		},
 		Properties: nh.getProperties(c),
 	}
+	debugRequest(req)
 	page, err := nh.nc.Page.Create(ctx, req)
 	if err != nil {
 		return nil, err

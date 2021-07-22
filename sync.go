@@ -72,6 +72,7 @@ func (cs *CloudFileSynchronizer) Sync(ctx context.Context, c *CloudFile) (*Notio
 	}
 
 	c.Tags = append(c.Tags, TagNeedsEdit)
+	cs.log.Debugln(c.FileID, c.Title, c.Tags)
 	page, err := cs.nh.CreatePage(ctx, c)
 	if err != nil {
 		return nil, err

@@ -2,10 +2,12 @@ module github.com/shayanh/notionify
 
 go 1.16
 
+replace github.com/jomei/notionapi => github.com/shayanh/notionapi v1.0.4
+
 require (
 	github.com/dropbox/dropbox-sdk-go-unofficial/v6 v6.0.2
 	github.com/go-redis/redis/v8 v8.11.0
-	github.com/gorilla/mux v1.8.0 // indirect
+	github.com/gorilla/mux v1.8.0
 	github.com/jomei/notionapi v1.0.3
 	github.com/onsi/gomega v1.14.0 // indirect
 	github.com/pdfcpu/pdfcpu v0.3.12
