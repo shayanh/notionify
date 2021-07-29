@@ -1,17 +1,17 @@
 package main
 
 import (
+	"github.com/shayanh/notionify/research"
 	"net/http"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/gorilla/mux"
-	"github.com/shayanh/notionify"
 	"github.com/sirupsen/logrus"
 )
 
 func logDecorator(h http.Handler, log *logrus.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		wr := notionify.NewResponseWriterWrapper(w)
+		wr := research.NewResponseWriterWrapper(w)
 		h.ServeHTTP(wr, r)
 		log.WithFields(logrus.Fields{
 			"method": r.Method,
@@ -40,7 +40,7 @@ func main() {
 	logrus.SetFormatter(newFormatter())
 	log := newLogger()
 
-	config, err := notionify.ReadConfig()
+	config, err := research.ReadConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -51,14 +51,14 @@ func main() {
 		DB:       config.Redis.DB,
 	})
 
-	nh := notionify.NewNotionHandler(config.Notion.Token, config.Notion.DatabaseID)
-	ch := notionify.NewCloudSynchronizer(nh, rdb, log)
-	dh := notionify.NewDropboxHandler(config.Dropbox.Token)
-	ds := notionify.NewDropboxSynchronizer(dh, ch, rdb, log)
+	nh := research.NewNotionHandler(config.Notion.Token, config.Notion.DatabaseID)
+	ch := research.NewCloudSynchronizer(nh, rdb, log)
+	dh := research.NewDropboxHandler(config.Dropbox.Token)
+	ds := research.NewDropboxSynchronizer(dh, ch, rdb, log)
 
 	router := mux.NewRouter()
 	router.StrictSlash(true)
-	dropboxWebhookHandler := notionify.NewDropboxWebhookHandler(config.Dropbox.RootFolder, ds, log)
+	dropboxWebhookHandler := research.NewDropboxWebhookHandler(config.Dropbox.RootFolder, ds, log)
 	dropboxWebhookHandler.HandleFuncs(router.PathPrefix("/dropbox-webhook").Subrouter())
 
 	log.Infof("Listening on %s", config.Web.Addr)

@@ -1,4 +1,4 @@
-package notionify
+package research
 
 import "github.com/spf13/viper"
 
@@ -30,8 +30,8 @@ type RedisConfig struct {
 }
 
 func ReadConfig() (AppConfig, error) {
-	viper.SetConfigName("config")
-	viper.AddConfigPath(".")
+	viper.SetConfigName("research-config")
+	viper.AddConfigPath("./config")
 	if err := viper.ReadInConfig(); err != nil {
 		return AppConfig{}, err
 	}

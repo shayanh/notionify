@@ -1,4 +1,4 @@
-package notionify
+package research
 
 import (
 	"errors"

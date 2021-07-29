@@ -15,5 +15,5 @@
 # vendor/
 
 main
-config.yaml
+config/research-config.yaml
 .idea/
