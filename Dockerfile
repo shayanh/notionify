@@ -1,5 +1,10 @@
 FROM golang:1.16-alpine
 
+RUN apk add tzdata && \
+    cp /usr/share/zoneinfo/America/Vancouver /etc/localtime && \
+    echo "America/Vancouver" > /etc/timezone && \
+    date
+
 WORKDIR /app
 
 COPY go.mod ./
