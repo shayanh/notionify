@@ -2,7 +2,7 @@ module github.com/shayanh/notionify
 
 go 1.16
 
-replace github.com/jomei/notionapi => github.com/shayanh/notionapi v1.0.4
+replace github.com/jomei/notionapi => github.com/shayanh/notionapi v1.0.5
 
 require (
 	github.com/dropbox/dropbox-sdk-go-unofficial/v6 v6.0.2

@@ -1,8 +1,14 @@
 package main
 
 import (
-	"github.com/shayanh/notionify/research"
+	"context"
 	"net/http"
+	"time"
+
+	"github.com/shayanh/notionify"
+	"github.com/shayanh/notionify/recurring"
+
+	"github.com/shayanh/notionify/research"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/gorilla/mux"
@@ -40,30 +46,49 @@ func main() {
 	logrus.SetFormatter(newFormatter())
 	log := newLogger()
 
-	config, err := research.ReadConfig()
+	rootConfig, err := notionify.ReadConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     config.Redis.Addr,
-		Password: config.Redis.Password,
-		DB:       config.Redis.DB,
+		Addr:     rootConfig.Redis.Addr,
+		Password: rootConfig.Redis.Password,
+		DB:       rootConfig.Redis.DB,
 	})
-
-	nh := research.NewNotionHandler(config.Notion.Token, config.Notion.DatabaseID)
-	ch := research.NewCloudSynchronizer(nh, rdb, log)
-	dh := research.NewDropboxHandler(config.Dropbox.Token)
-	ds := research.NewDropboxSynchronizer(dh, ch, rdb, log)
 
 	router := mux.NewRouter()
 	router.StrictSlash(true)
-	dropboxWebhookHandler := research.NewDropboxWebhookHandler(config.Dropbox.RootFolder, ds, log)
-	dropboxWebhookHandler.HandleFuncs(router.PathPrefix("/dropbox-webhook").Subrouter())
 
-	log.Infof("Listening on %s", config.Web.Addr)
-	err = http.ListenAndServe(config.Web.Addr, logDecorator(router, log))
-	if err != nil {
-		log.Fatal(err)
-	}
+	func(config notionify.ResearchConfig) {
+		nh := research.NewNotionHandler(config.Notion.Token, config.Notion.DatabaseID)
+		ch := research.NewCloudSynchronizer(nh, rdb, log)
+		dh := research.NewDropboxHandler(config.Dropbox.Token)
+		ds := research.NewDropboxSynchronizer(dh, ch, rdb, log)
+		dwh := research.NewDropboxWebhookHandler(config.Dropbox.RootFolder, ds, log)
+		dwh.HandleFuncs(router.PathPrefix("/dropbox-webhook").Subrouter())
+	}(rootConfig.Research)
+
+	go func(config notionify.RecurringConfig) {
+		nh := recurring.NewNotionHandler(config.Notion.Token, config.Notion.DatabaseID)
+		th := recurring.NewTasksHandler(nh, log)
+		ctx := context.Background()
+		for {
+			err := th.Handle(ctx)
+			if err != nil {
+				log.Error(err)
+			}
+			time.Sleep(config.Interval)
+		}
+	}(rootConfig.Recurring)
+
+	go func() {
+		log.Infof("Listening on %s", rootConfig.Web.Addr)
+		err = http.ListenAndServe(rootConfig.Web.Addr, logDecorator(router, log))
+		if err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	select {}
 }

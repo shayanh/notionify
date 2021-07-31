@@ -1,12 +1,26 @@
 package notionify
 
-import "github.com/spf13/viper"
+import (
+	"time"
 
-type AppConfig struct {
-	Web     WebConfig     `mapstructure:"web"`
+	"github.com/spf13/viper"
+)
+
+type RootConfig struct {
+	Web       WebConfig       `mapstructure:"web"`
+	Redis     RedisConfig     `mapstructure:"redis"`
+	Research  ResearchConfig  `mapstructure:"research"`
+	Recurring RecurringConfig `mapstructure:"recurring"`
+}
+
+type ResearchConfig struct {
 	Dropbox DropboxConfig `mapstructure:"dropbox"`
 	Notion  NotionConfig  `mapstructure:"notion"`
-	Redis   RedisConfig   `mapstructure:"redis"`
+}
+
+type RecurringConfig struct {
+	Interval time.Duration `mapstructure:"interval"`
+	Notion   NotionConfig  `mapstructure:"notion"`
 }
 
 type WebConfig struct {
@@ -29,13 +43,13 @@ type RedisConfig struct {
 	DB       int    `mapstructure:"db"`
 }
 
-func ReadConfig() (AppConfig, error) {
-	viper.SetConfigName("research-config")
-	viper.AddConfigPath("./config")
+func ReadConfig() (RootConfig, error) {
+	viper.SetConfigName("config")
+	viper.AddConfigPath(".")
 	if err := viper.ReadInConfig(); err != nil {
-		return AppConfig{}, err
+		return RootConfig{}, err
 	}
-	var config AppConfig
+	var config RootConfig
 	err := viper.UnmarshalKey("config", &config)
 	return config, err
 }
