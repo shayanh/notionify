@@ -22,7 +22,10 @@ func NewNotionPage(page *notionapi.Page) *NotionPage {
 	// TODO: type assertions
 	nameProp := page.Properties["Name"]
 	if nameProp != nil {
-		res.Name = nameProp.(*notionapi.PageTitleProperty).Title[0].PlainText
+		titles := nameProp.(*notionapi.PageTitleProperty).Title
+		if len(titles) > 0 {
+			res.Name = titles[0].PlainText
+		}
 	}
 
 	typeProp := page.Properties["Type"]
@@ -63,7 +66,7 @@ func (nh *NotionHandler) getProperties(c *CloudFile) notionapi.Properties {
 		"Tags": notionapi.MultiSelectOptionsProperty{
 			Type: "multi_select",
 			MultiSelect: func() []notionapi.Option {
-				res := []notionapi.Option{}
+				var res []notionapi.Option
 				for _, tag := range c.Tags {
 					res = append(res, notionapi.Option{Name: tag})
 				}
@@ -77,8 +80,8 @@ func (nh *NotionHandler) getProperties(c *CloudFile) notionapi.Properties {
 	}
 }
 
-func debugRequest(req interface{}) {
-	b, err := json.Marshal(req)
+func debugJSON(obj interface{}) {
+	b, err := json.Marshal(obj)
 	if err != nil {
 		logrus.Error(err)
 	}
@@ -92,7 +95,7 @@ func (nh *NotionHandler) CreatePage(ctx context.Context, c *CloudFile) (*NotionP
 		},
 		Properties: nh.getProperties(c),
 	}
-	debugRequest(req)
+	// debugJSON(req)
 	page, err := nh.nc.Page.Create(ctx, req)
 	if err != nil {
 		return nil, err

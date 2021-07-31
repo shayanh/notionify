@@ -1,4 +1,4 @@
-package research
+package notionify
 
 import "github.com/spf13/viper"
 
