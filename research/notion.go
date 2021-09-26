@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/jomei/notionapi"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -98,7 +99,7 @@ func (nh *NotionHandler) CreatePage(ctx context.Context, c *CloudFile) (*NotionP
 	// debugJSON(req)
 	page, err := nh.nc.Page.Create(ctx, req)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "notion handler CreatePage failed")
 	}
 	return NewNotionPage(page), nil
 }
@@ -116,7 +117,7 @@ func (nh *NotionHandler) UpdatePage(ctx context.Context, c *CloudFile, pageID st
 
 	page, err := nh.nc.Page.Update(ctx, notionapi.PageID(pageID), req)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "notion handler UpdatePage failed")
 	}
 	return NewNotionPage(page), nil
 }

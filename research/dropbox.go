@@ -14,6 +14,7 @@ import (
 	"github.com/dropbox/dropbox-sdk-go-unofficial/v6/dropbox/files"
 	"github.com/dropbox/dropbox-sdk-go-unofficial/v6/dropbox/sharing"
 	"github.com/go-redis/redis/v8"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/multierr"
 )
@@ -45,18 +46,26 @@ func (ds *DropboxSynchronizer) SyncFolder(ctx context.Context, path string) ([]*
 	key := ds.getCursorKey(path)
 	if val, err := ds.rdb.Get(ctx, key).Result(); err != redis.Nil {
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "dropbox SyncFolder failed")
 		}
 		cursor = val
 		ds.log.WithFields(logrus.Fields{
 			"path":   path,
 			"cursor": cursor,
-		}).Info("Cursor retrieved from redis.")
+		}).Info("Cursor has been retrieved from redis.")
 	}
 
 	entries, newCursor, err := ds.dh.ListFolder(path, cursor)
 	if err != nil {
-		ds.log.Error(err)
+		if _, err := ds.rdb.Del(ctx, key).Result(); err != nil {
+			ds.log.WithError(err).Error("cannot delete dropbox cursor")
+		} else {
+			ds.log.WithFields(logrus.Fields{
+				"path":   path,
+				"cursor": cursor,
+			}).Info("Cursor has been deleted from redis.")
+		}
+		return nil, errors.Wrap(err, "dropbox SyncFolder failed")
 	}
 
 	var errs error
@@ -137,7 +146,7 @@ func NewDropboxHandler(token string) *DropboxHandler {
 func (dh *DropboxHandler) getCloudFile(fileMetadata *files.FileMetadata) (*CloudFile, error) {
 	link, err := dh.getFileLink(fileMetadata)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "dropbox getCloudFile failed")
 	}
 	title := dh.getFileTitle(fileMetadata)
 	cloudFile := &CloudFile{
@@ -162,7 +171,7 @@ func (dh *DropboxHandler) ListFolder(path string, cursor string) ([]files.IsMeta
 			resp, err = dh.fc.ListFolderContinue(arg)
 		}
 		if err != nil {
-			return entries, cursor, err
+			return entries, cursor, errors.Wrap(err, "dropbox ListFolder failed")
 		}
 		entries = append(entries, resp.Entries...)
 		cursor = resp.Cursor
@@ -174,7 +183,7 @@ func (dh *DropboxHandler) ListFolder(path string, cursor string) ([]files.IsMeta
 func (dh *DropboxHandler) Upload(path string, content io.Reader) (*CloudFile, error) {
 	metadata, err := dh.fc.Upload(files.NewCommitInfo(path), content)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "dropbox Upload failed")
 	}
 	return dh.getCloudFile(metadata)
 }
@@ -216,7 +225,7 @@ func (dh *DropboxHandler) getFileLink(fileMetadata *files.FileMetadata) (string,
 	arg := sharing.NewGetFileMetadataArg(fileMetadata.PathLower)
 	sharedFileMetadata, err := dh.sc.GetFileMetadata(arg)
 	if err != nil {
-		return "", err
+		return "", errors.Wrap(err, "dropbox getFileLink failed")
 	}
 	link := strings.TrimSuffix(sharedFileMetadata.PreviewUrl, "?dl=0")
 	return link, nil

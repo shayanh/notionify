@@ -11,6 +11,7 @@ require (
 	github.com/jomei/notionapi v1.0.3
 	github.com/onsi/gomega v1.14.0 // indirect
 	github.com/pdfcpu/pdfcpu v0.3.12
+	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/viper v1.8.1
 	go.uber.org/atomic v1.9.0 // indirect

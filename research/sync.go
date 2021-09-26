@@ -2,13 +2,13 @@ package research
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"path"
 	"strings"
 	"sync"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -52,13 +52,13 @@ var TagNeedsEdit = "needs edit"
 func (cs *CloudFileSynchronizer) Sync(ctx context.Context, c *CloudFile) (*NotionPage, error) {
 	key := c.GetKey()
 	if err := cs.acquireProc(key); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "cloudfile Sync failed")
 	}
 	defer cs.releaseProc(key)
 
 	storedPageID, err := cs.rdb.Get(ctx, key).Result()
 	if err != redis.Nil && err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "cloudfile Sync failed")
 	}
 	if err == nil {
 		cs.log.WithFields(logrus.Fields{
@@ -68,14 +68,14 @@ func (cs *CloudFileSynchronizer) Sync(ctx context.Context, c *CloudFile) (*Notio
 		}).Info("Notion page found.")
 
 		page, err := cs.nh.UpdatePage(ctx, c, storedPageID)
-		return page, err
+		return page, errors.Wrap(err, "cloudfile Sync failed")
 	}
 
 	c.Tags = append(c.Tags, TagNeedsEdit)
 	cs.log.Debugln(c.FileID, c.Title, c.Tags)
 	page, err := cs.nh.CreatePage(ctx, c)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "cloudfile Sync failed")
 	}
 
 	err = cs.rdb.Set(ctx, key, page.ID, 0).Err()
