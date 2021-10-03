@@ -86,6 +86,7 @@ func (ds *DropboxSynchronizer) SyncFolder(ctx context.Context, path string) ([]*
 			}
 			page, err := ds.cs.Sync(ctx, cloudFile)
 			if err != nil {
+				ds.log.WithField("CloudFile", cloudFile).Error(err)
 				haveErr = true
 				errs = multierr.Append(errs, err)
 			} else {
