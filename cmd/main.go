@@ -62,8 +62,8 @@ func main() {
 
 	func(config notionify.ResearchConfig) {
 		nh := research.NewNotionHandler(config.Notion.Token, config.Notion.DatabaseID)
-		ch := research.NewCloudSynchronizer(nh, rdb, log)
-		dh := research.NewDropboxHandler(config.Dropbox.Token)
+		ch := research.NewCloudFileSyncerImpl(nh, rdb, log)
+		dh := research.NewDropboxHandler(config.Dropbox.Token, log)
 		ds := research.NewDropboxSynchronizer(dh, ch, rdb, log)
 		dwh := research.NewDropboxWebhookHandler(config.Dropbox.RootFolder, ds, log)
 		dwh.HandleFuncs(router.PathPrefix("/dropbox-webhook").Subrouter())

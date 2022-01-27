@@ -12,8 +12,18 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// CloudFileSynchronizer ensures that a page for this CloudFile is exist in the Notion.
-type CloudFileSynchronizer struct {
+// CloudFileSyncer synchronizes the given CloudFile within Notion.
+type CloudFileSyncer interface {
+	Sync(ctx context.Context, c *CloudFile) (*NotionPage, error)
+}
+
+type DummyCloudFileSyncer struct{}
+
+func (ds DummyCloudFileSyncer) Sync(ctx context.Context, c *CloudFile) (*NotionPage, error) {
+	return &NotionPage{}, nil
+}
+
+type CloudFileSyncerImpl struct {
 	nh  *NotionHandler
 	rdb *redis.Client
 	log *logrus.Logger
@@ -22,8 +32,8 @@ type CloudFileSynchronizer struct {
 	inProc map[string]bool
 }
 
-func NewCloudSynchronizer(nh *NotionHandler, rdb *redis.Client, log *logrus.Logger) *CloudFileSynchronizer {
-	return &CloudFileSynchronizer{
+func NewCloudFileSyncerImpl(nh *NotionHandler, rdb *redis.Client, log *logrus.Logger) *CloudFileSyncerImpl {
+	return &CloudFileSyncerImpl{
 		nh:     nh,
 		rdb:    rdb,
 		log:    log,
@@ -31,7 +41,7 @@ func NewCloudSynchronizer(nh *NotionHandler, rdb *redis.Client, log *logrus.Logg
 	}
 }
 
-func (cs *CloudFileSynchronizer) acquireProc(key string) error {
+func (cs *CloudFileSyncerImpl) acquireProc(key string) error {
 	cs.lock.Lock()
 	defer cs.lock.Unlock()
 	if _, ok := cs.inProc[key]; ok {
@@ -41,7 +51,7 @@ func (cs *CloudFileSynchronizer) acquireProc(key string) error {
 	return nil
 }
 
-func (cs *CloudFileSynchronizer) releaseProc(key string) {
+func (cs *CloudFileSyncerImpl) releaseProc(key string) {
 	cs.lock.Lock()
 	defer cs.lock.Unlock()
 	delete(cs.inProc, key)
@@ -49,7 +59,7 @@ func (cs *CloudFileSynchronizer) releaseProc(key string) {
 
 var TagNeedsEdit = "needs edit"
 
-func (cs *CloudFileSynchronizer) Sync(ctx context.Context, c *CloudFile) (*NotionPage, error) {
+func (cs *CloudFileSyncerImpl) Sync(ctx context.Context, c *CloudFile) (*NotionPage, error) {
 	key := c.GetKey()
 	if err := cs.acquireProc(key); err != nil {
 		return nil, errors.Wrap(err, "cloudfile Sync failed")
@@ -87,7 +97,11 @@ func (cs *CloudFileSynchronizer) Sync(ctx context.Context, c *CloudFile) (*Notio
 	return page, err
 }
 
-type NotionSynchronizer struct {
+type NotionSyncer interface {
+	SyncDatabase(ctx context.Context) ([]*CloudFile, error)
+}
+
+type NotionSyncerImpl struct {
 	cloudFolderPath string
 	nh              *NotionHandler
 	cu              CloudUploader
@@ -96,8 +110,8 @@ type NotionSynchronizer struct {
 	client          *http.Client
 }
 
-func NewNotionSynchronizer(path string, nh *NotionHandler, cu CloudUploader, rdb *redis.Client, log *logrus.Logger) *NotionSynchronizer {
-	return &NotionSynchronizer{
+func NewNotionSyncerImpl(path string, nh *NotionHandler, cu CloudUploader, rdb *redis.Client, log *logrus.Logger) *NotionSyncerImpl {
+	return &NotionSyncerImpl{
 		cloudFolderPath: path,
 		nh:              nh,
 		cu:              cu,
@@ -107,7 +121,7 @@ func NewNotionSynchronizer(path string, nh *NotionHandler, cu CloudUploader, rdb
 	}
 }
 
-func (ns *NotionSynchronizer) SyncDatabase(ctx context.Context) ([]*CloudFile, error) {
+func (ns *NotionSyncerImpl) SyncDatabase(ctx context.Context) ([]*CloudFile, error) {
 	pages, err := ns.nh.ListPages(ctx)
 	if err != nil {
 		return nil, err
@@ -127,7 +141,7 @@ func (ns *NotionSynchronizer) SyncDatabase(ctx context.Context) ([]*CloudFile, e
 	return cloudFiles, nil
 }
 
-func (ns *NotionSynchronizer) shouldSync(page *NotionPage) bool {
+func (ns *NotionSyncerImpl) shouldSync(page *NotionPage) bool {
 	if page.Type != "paper" {
 		return false
 	}
@@ -138,7 +152,7 @@ func (ns *NotionSynchronizer) shouldSync(page *NotionPage) bool {
 	return true
 }
 
-func (ns *NotionSynchronizer) syncPage(ctx context.Context, page *NotionPage) (*CloudFile, error) {
+func (ns *NotionSyncerImpl) syncPage(ctx context.Context, page *NotionPage) (*CloudFile, error) {
 	if !ns.shouldSync(page) {
 		return nil, nil
 	}
@@ -147,7 +161,11 @@ func (ns *NotionSynchronizer) syncPage(ctx context.Context, page *NotionPage) (*
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			ns.log.Errorf("Error while closing response body: %v", err)
+		}
+	}()
 
 	cloudFilePath := path.Join(ns.cloudFolderPath, path.Base(page.URL))
 	cloudFile, err := ns.cu.Upload(cloudFilePath, resp.Body)

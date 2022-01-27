@@ -23,13 +23,13 @@ import (
 // synchronized with Notion.
 type DropboxSynchronizer struct {
 	dh   *DropboxHandler
-	cs   *CloudFileSynchronizer
+	cs   CloudFileSyncer
 	rdb  *redis.Client
 	log  *logrus.Logger
 	lock sync.Mutex
 }
 
-func NewDropboxSynchronizer(dh *DropboxHandler, ch *CloudFileSynchronizer, rdb *redis.Client, log *logrus.Logger) *DropboxSynchronizer {
+func NewDropboxSynchronizer(dh *DropboxHandler, ch CloudFileSyncer, rdb *redis.Client, log *logrus.Logger) *DropboxSynchronizer {
 	return &DropboxSynchronizer{
 		dh:  dh,
 		cs:  ch,
@@ -127,9 +127,10 @@ type DropboxHandler struct {
 	config dropbox.Config
 	fc     files.Client
 	sc     sharing.Client
+	log    *logrus.Logger
 }
 
-func NewDropboxHandler(token string) *DropboxHandler {
+func NewDropboxHandler(token string, log *logrus.Logger) *DropboxHandler {
 	config := dropbox.Config{
 		Token:    token,
 		LogLevel: dropbox.LogInfo,
@@ -141,6 +142,7 @@ func NewDropboxHandler(token string) *DropboxHandler {
 		config: config,
 		fc:     filesClient,
 		sc:     sharingClient,
+		log:    log,
 	}
 }
 
@@ -201,7 +203,11 @@ func (dh *DropboxHandler) getFileTitle(fileMetadata *files.FileMetadata) string 
 		if err != nil {
 			return "", err
 		}
-		defer reader.Close()
+		defer func() {
+			if err := reader.Close(); err != nil {
+				dh.log.Error(err)
+			}
+		}()
 
 		body, err := ioutil.ReadAll(reader)
 		if err != nil {

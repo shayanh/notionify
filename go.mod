@@ -9,6 +9,7 @@ require (
 	github.com/go-redis/redis/v8 v8.11.0
 	github.com/gorilla/mux v1.8.0
 	github.com/jomei/notionapi v1.0.3
+	github.com/jstemmer/gotags v1.4.1 // indirect
 	github.com/onsi/gomega v1.14.0 // indirect
 	github.com/pdfcpu/pdfcpu v0.3.12
 	github.com/pkg/errors v0.9.1

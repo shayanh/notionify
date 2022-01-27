@@ -26,12 +26,15 @@ func (dwh *DropboxWebhookHandler) handleChallenge(w http.ResponseWriter, r *http
 	challenge := r.URL.Query().Get("challenge")
 	w.Header().Add("Content-Type", "text-plain")
 	w.Header().Add("X-Content-Type-Options", "nosniff")
-	w.Write([]byte(challenge))
+	_, err := w.Write([]byte(challenge))
+	if err != nil {
+		dwh.log.Errorf("Error while writing handleChallenge response: %v", err)
+	}
 }
 
 func (dwh *DropboxWebhookHandler) handleWebhook(w http.ResponseWriter, r *http.Request) {
-	// TODO: authenticatation
-	// Assume that we have only one user
+	// TODO: authentication
+	// Assuming that we have only one user
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -48,7 +51,7 @@ func (dwh *DropboxWebhookHandler) handleWebhook(w http.ResponseWriter, r *http.R
 			dwh.log.WithFields(logrus.Fields{
 				"Name": page.Name,
 				"ID":   page.ID,
-			}).Info("Synced page.")
+			}).Info("Synced page")
 		}
 	}()
 }
